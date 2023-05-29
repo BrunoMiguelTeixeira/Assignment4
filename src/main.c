@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2015 Intel Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -14,42 +8,76 @@
 #define I2C0_NODE DT_NODELABEL(tempsensor)
 
 /* size of stack area used by each thread */
-#define TASKA_STACK_SIZE 1024
+#define TASK_TEMP_STACK_SIZE 1024
+#define TASK_BUTTONS_STACK_SIZE 1024
 /* scheduling priority used by each thread */
-#define TASKA_PRIORITY 5
-
-
+#define TASK_TEMP_PRIORITY 5
+#define TASK_BUTTONS_PRIORITY 5
+/* i2c setup */
 static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C0_NODE);
+
+/* button pins */
+const uint8_t buttons_pins[] = {11, 12, 24, 25};
+
+/* needed for the buttons */
+#define GPIO0_NODE DT_NODELABEL(gpio0)
 
 uint8_t data=0x00;
 int ret;
-int ready=0;
+int output_period=10;	/* ms */
 
-void task_thread_A(void)
+void task_Temperature(void)
 {
 	printk("THREAD A Started!\n");
 	/*updating data variable every 10ms*/
+	int64_t start_time;
+	/* infinite cycle */
 	while(1)
 	{
+		start_time=k_uptime_get();
 		ret = i2c_read_dt(&dev_i2c, &data,sizeof(data));
+		TC74Update(ret);	/* missing structure to write */
 		printk("Read %dºCelcius\n", data);
-		k_msleep(200);
+		/* Make thread sleep for the remaining of time before next check */
+		if(k_uptime_get()-start_time < output_period)
+		{
+			/*gets the most updated remaining time to sleep*/
+			k_msleep(output_period - k_uptime_get());
+		}
+		else{
+			printk("Failed to meet requirement!");
+		}
 	}
 }
-/*Thread like teach */
-K_THREAD_STACK_DEFINE(TaskA_stack_area, TASKA_STACK_SIZE);
-struct k_thread TaskA_thread_data;
-k_tid_t TaskA_tid;
 
+void task_Buttons(void)
+{
+
+}
+
+/* Thread definition temperature*/
+K_THREAD_STACK_DEFINE(Task_temp_stack_area, TASK_TEMP_STACK_SIZE);
+struct k_thread Task_temp_thread_data;
+k_tid_t Task_temp_tid;
+
+/* Thread definition buttons*/
+K_THREAD_STACK_DEFINE(Task_buttons_stack_area, TASK_BUTTONS_STACK_SIZE);
+struct k_thread Task_buttons_thread_data;
+k_tid_t Task_buttons_tid;
 
 void main(void)
 {
-	TaskA_tid = k_thread_create(&TaskA_thread_data, TaskA_stack_area,
-        K_THREAD_STACK_SIZEOF(TaskA_stack_area), task_thread_A,
-        NULL, NULL, NULL, TASKA_PRIORITY, 0, K_NO_WAIT);
+	/* Thread creation */
+	Task_temp_tid = k_thread_create(&Task_temp_thread_data, Task_temp_stack_area,
+                          			K_THREAD_STACK_SIZEOF(Task_temp_stack_area), task_Temperature,
+        							NULL, NULL, NULL, TASK_TEMP_PRIORITY, 0, K_NO_WAIT);
+
+	Task_temp_tid = k_thread_create(&Task_buttons_thread_data, Task_buttons_stack_area,
+        							K_THREAD_STACK_SIZEOF(Task_buttons_stack_area), task_Buttons,
+        							NULL, NULL, NULL, TASK_BUTTONS_PRIORITY, 0, K_NO_WAIT);
 
 
-	/*Check if the device is ready to be used*/
+	/* Check if the device is ready to be used,place holder for now */
 	if (!device_is_ready(dev_i2c.bus)) {
 		printk("I2C: Device is not ready.\n");
 		return;
@@ -60,3 +88,7 @@ void main(void)
 }
 
 
+void TC74Update(int dummy)
+{
+	/* Function to later on update struct value*/
+}
