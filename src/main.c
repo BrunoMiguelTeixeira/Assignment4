@@ -21,6 +21,8 @@
 
 /*Semaphores definition*/
 K_SEM_DEFINE(temp_sem, 1, 1);
+K_SEM_DEFINE(led_sem, 1, 1);
+K_SEM_DEFINE(button_sem, 1, 1);
 
 /* Create threads stack space*/
 K_THREAD_STACK_DEFINE(task_temp_stack, STACK_SIZE);
@@ -53,12 +55,11 @@ const uint8_t leds_pins[] = {13, 14, 15, 16};
 uint8_t data = 0x00;
 
 const struct uart_config uart_cfg = {
-		.baudrate = 115200,
-		.parity = UART_CFG_PARITY_NONE,
-		.stop_bits = UART_CFG_STOP_BITS_1,
-		.data_bits = UART_CFG_DATA_BITS_8,
-		.flow_ctrl = UART_CFG_FLOW_CTRL_NONE
-	};
+	.baudrate = 115200,
+	.parity = UART_CFG_PARITY_NONE,
+	.stop_bits = UART_CFG_STOP_BITS_1,
+	.data_bits = UART_CFG_DATA_BITS_8,
+	.flow_ctrl = UART_CFG_FLOW_CTRL_NONE};
 
 int ret;
 int output_period = 10; /* ms */
@@ -76,14 +77,13 @@ struct RTDB
 	int BUT2;
 	int BUT3;
 	int TEMP;
-};
-
+} RTDB;
 
 /* main */
 void main(void)
 {
 	/* Check if uart is ready */
-	if(!device_is_ready(uart))
+	if (!device_is_ready(uart))
 	{
 		printk("UART: Device is not ready.\n");
 		return;
@@ -92,11 +92,12 @@ void main(void)
 	{
 		printk("UART: Device is ready!\n");
 	}
-	
+
 	/* Configure UART */
 	int err = uart_configure(uart, &uart_cfg);
 
-	if (err == -ENOSYS) {
+	if (err == -ENOSYS)
+	{
 		return -ENOSYS;
 	}
 
@@ -163,7 +164,7 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 	/*updating data variable every 10ms*/
 	int64_t start_time;
 
-	printk("THREAD A Started!\n");
+	printk("THREAD Temp Started!\n");
 	/* infinite cycle */
 	while (1)
 	{
@@ -175,7 +176,7 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 
 		k_sem_take(&temp_sem, K_FOREVER);
 
-		// RTDB.TEMP;
+		RTDB.TEMP = ret;
 
 		k_sem_give(&temp_sem);
 
@@ -183,19 +184,70 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 		if (k_uptime_get() - start_time < output_period)
 		{
 			/*gets the most updated remaining time to sleep*/
-			k_msleep(output_period - k_uptime_get());
+			k_msleep(input_period - (k_uptime_get() - start_time));
 		}
 		else
 		{
 			printk("Failed to meet requirement!");
+			return;
 		}
 	}
 }
 
 void ButtonsUpdate(void *argA, void *argB, void *argC)
 {
+	int i = 0;
+	int64_t start_time;
+	while (1)
+	{
+		start_time = k_uptime_get();
+
+		k_sem_take(&button_sem, K_FOREVER);
+
+		RTDB.BUT0 = gpio_pin_get(gpio0_dev, buttons_pins[0]);
+		RTDB.BUT1 = gpio_pin_get(gpio0_dev, buttons_pins[1]);
+		RTDB.BUT2 = gpio_pin_get(gpio0_dev, buttons_pins[2]);
+		RTDB.BUT3 = gpio_pin_get(gpio0_dev, buttons_pins[3]);
+
+		k_sem_give(&button_sem);
+
+		/* Make thread sleep for the remaining of time before next check */
+		if (k_uptime_get() - start_time < output_period)
+		{
+			/*gets the most updated remaining time to sleep*/
+			k_msleep(input_period - (k_uptime_get() - start_time));
+		}
+		else
+		{
+			printk("Failed to meet requirement!");
+			return;
+		}
+	}
 }
+
+/* Toggle led1 */
+// gpio_pin_toggle(gpio0_dev, LED1_PIN);
 
 void LedsUpdate(void *argA, void *argB, void *argC)
 {
+	int start_time = k_uptime_get();
+	int i;
+	while (1)
+	{
+		gpio_pin_set(gpio0_dev, leds_pins[0],RTDB.LED0);
+		gpio_pin_set(gpio0_dev, leds_pins[1],RTDB.LED1);
+		gpio_pin_set(gpio0_dev, leds_pins[2],RTDB.LED2);
+		gpio_pin_set(gpio0_dev, leds_pins[3],RTDB.LED3);
+		
+	if (k_uptime_get() - start_time < output_period)
+		{
+			/*gets the most updated remaining time to sleep*/
+			k_msleep(input_period - (k_uptime_get() - start_time));
+		}
+		else
+		{
+			printk("Failed to meet requirement!");
+			return;
+		}
+	}
 }
