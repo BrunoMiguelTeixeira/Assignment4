@@ -4,10 +4,12 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/uart.h>
 
 /* Refer to dts file */
 #define I2C0_NODE DT_NODELABEL(tempsensor)
 #define GPIO0_NODE DT_NODELABEL(gpio0)
+#define UART0_NODE DT_NODELABEL(uart0)
 
 /* size of stack area used by each thread */
 #define STACK_SIZE 1024
@@ -43,11 +45,20 @@ void LedsUpdate(void *argA, void *argB, void *argC);
 /*----*/
 static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C0_NODE);
 static const struct device *gpio0_dev = DEVICE_DT_GET(GPIO0_NODE);
+static const struct device *uart = DEVICE_DT_GET(UART0_NODE);
 
 const uint8_t buttons_pins[] = {11, 12, 24, 25};
 const uint8_t leds_pins[] = {13, 14, 15, 16};
 
 uint8_t data = 0x00;
+
+const struct uart_config uart_cfg = {
+		.baudrate = 115200,
+		.parity = UART_CFG_PARITY_NONE,
+		.stop_bits = UART_CFG_STOP_BITS_1,
+		.data_bits = UART_CFG_DATA_BITS_8,
+		.flow_ctrl = UART_CFG_FLOW_CTRL_NONE
+	};
 
 int ret;
 int output_period = 10; /* ms */
@@ -67,8 +78,28 @@ struct RTDB
 	int TEMP;
 };
 
+
+/* main */
 void main(void)
 {
+	/* Check if uart is ready */
+	if(!device_is_ready(uart))
+	{
+		printk("UART: Device is not ready.\n");
+		return;
+	}
+	else
+	{
+		printk("UART: Device is ready!\n");
+	}
+	
+	/* Configure UART */
+	int err = uart_configure(uart, &uart_cfg);
+
+	if (err == -ENOSYS) {
+		return -ENOSYS;
+	}
+
 	/* Check if the i2c connected device is ready to be used */
 	if (!device_is_ready(dev_i2c.bus))
 	{
@@ -111,8 +142,6 @@ void main(void)
 		}
 	}
 
-
-
 	/* Thread creation */
 	task_temp_tid = k_thread_create(&task_temp_data, task_temp_stack,
 									K_THREAD_STACK_SIZEOF(task_temp_stack), TemperatureUpdate,
@@ -144,13 +173,13 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 
 		printk("Read %dºCelcius\n", data);
 
-		k_sem_take(&temp_sem, K_FOREVER); 
+		k_sem_take(&temp_sem, K_FOREVER);
 
 		// RTDB.TEMP;
 
 		k_sem_give(&temp_sem);
 
-			/* Make thread sleep for the remaining of time before next check */
+		/* Make thread sleep for the remaining of time before next check */
 		if (k_uptime_get() - start_time < output_period)
 		{
 			/*gets the most updated remaining time to sleep*/
