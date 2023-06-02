@@ -19,6 +19,11 @@
 #define TASK_BUTTONS_PRIORITY 5
 #define TASK_LEDS_PRIORITY 5
 
+/* UART Defines*/
+#define SLEEP_TIME_MS 1000
+#define RECEIVE_BUFF_SIZE 10
+#define RECEIVE_TIMEOUT 100
+
 /*Semaphores definition*/
 K_SEM_DEFINE(temp_sem, 1, 1);
 K_SEM_DEFINE(led_sem, 1, 1);
@@ -44,7 +49,7 @@ void ButtonsUpdate(void *argA, void *argB, void *argC);
 void TemperatureUpdate(void *argA, void *argB, void *argC);
 void LedsUpdate(void *argA, void *argB, void *argC);
 
-/*----*/
+/*Device structs*/
 static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C0_NODE);
 static const struct device *gpio0_dev = DEVICE_DT_GET(GPIO0_NODE);
 static const struct device *uart = DEVICE_DT_GET(UART0_NODE);
@@ -60,6 +65,12 @@ const struct uart_config uart_cfg = {
 	.stop_bits = UART_CFG_STOP_BITS_1,
 	.data_bits = UART_CFG_DATA_BITS_8,
 	.flow_ctrl = UART_CFG_FLOW_CTRL_NONE};
+
+static uint8_t tx_buf[] = {"nRF Connect SDK Fundamentals Course\n\r"
+						   "Press 1-3 on your keyboard to toggle LEDS 1-3 on your development kit\n\r"};
+
+/* STEP 10.1.2 - Define the receive buffer */
+static uint8_t rx_buf[RECEIVE_BUFF_SIZE] = {0};
 
 int ret;
 int output_period = 10; /* ms */
@@ -78,6 +89,8 @@ struct RTDB
 	int BUT3;
 	int TEMP;
 } RTDB;
+
+static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data);
 
 /* main */
 void main(void)
@@ -98,10 +111,31 @@ void main(void)
 
 	if (err == -ENOSYS)
 	{
-		return -ENOSYS;
+		return;
 	}
 
-	/* Check if the i2c connected device is ready to be used */
+	/* Define UART Callback function*/
+	ret = uart_callback_set(uart, uart_cb, NULL);
+	if (ret)
+	{
+		return;
+	}
+
+	/*Start UART transmition*/
+	ret = uart_tx(uart, tx_buf, sizeof(tx_buf), SYS_FOREVER_MS);
+	if (ret)
+	{
+		return;
+	}
+	
+	/*Start UART receiver*/
+	ret = uart_rx_enable(uart, rx_buf, sizeof rx_buf, RECEIVE_TIMEOUT);
+	if (ret)
+	{
+		return;
+	}
+
+	/* Check  I2C device */
 	if (!device_is_ready(dev_i2c.bus))
 	{
 		printk("I2C: Device is not ready.\n");
@@ -144,6 +178,7 @@ void main(void)
 	}
 
 	/* Thread creation */
+	/*
 	task_temp_tid = k_thread_create(&task_temp_data, task_temp_stack,
 									K_THREAD_STACK_SIZEOF(task_temp_stack), TemperatureUpdate,
 									NULL, NULL, NULL, TASK_TEMP_PRIORITY, 0, K_NO_WAIT);
@@ -156,7 +191,16 @@ void main(void)
 									K_THREAD_STACK_SIZEOF(task_leds_stack), LedsUpdate,
 									NULL, NULL, NULL, TASK_LEDS_PRIORITY, 0, K_NO_WAIT);
 
-	return;
+	return;*/
+	while (1)
+	{
+		for(i = 0; i < RECEIVE_BUFF_SIZE;i++)
+		{
+			printk("%c ",rx_buf[i]);
+		}
+		printk("\n");
+		k_msleep(SLEEP_TIME_MS);
+	}
 }
 
 void TemperatureUpdate(void *argA, void *argB, void *argC)
@@ -196,7 +240,7 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 
 void ButtonsUpdate(void *argA, void *argB, void *argC)
 {
-	int i = 0;
+	
 	int64_t start_time;
 	while (1)
 	{
@@ -231,15 +275,15 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 void LedsUpdate(void *argA, void *argB, void *argC)
 {
 	int start_time = k_uptime_get();
-	int i;
+	
 	while (1)
 	{
-		gpio_pin_set(gpio0_dev, leds_pins[0],RTDB.LED0);
-		gpio_pin_set(gpio0_dev, leds_pins[1],RTDB.LED1);
-		gpio_pin_set(gpio0_dev, leds_pins[2],RTDB.LED2);
-		gpio_pin_set(gpio0_dev, leds_pins[3],RTDB.LED3);
-		
-	if (k_uptime_get() - start_time < output_period)
+		gpio_pin_set(gpio0_dev, leds_pins[0], RTDB.LED0);
+		gpio_pin_set(gpio0_dev, leds_pins[1], RTDB.LED1);
+		gpio_pin_set(gpio0_dev, leds_pins[2], RTDB.LED2);
+		gpio_pin_set(gpio0_dev, leds_pins[3], RTDB.LED3);
+
+		if (k_uptime_get() - start_time < output_period)
 		{
 			/*gets the most updated remaining time to sleep*/
 			k_msleep(input_period - (k_uptime_get() - start_time));
@@ -249,5 +293,32 @@ void LedsUpdate(void *argA, void *argB, void *argC)
 			printk("Failed to meet requirement!");
 			return;
 		}
+	}
+}
+
+static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
+{
+	switch (evt->type) {
+
+	case UART_RX_RDY:
+	if((evt->data.rx.len) == 1){
+
+		if(evt->data.rx.buf[evt->data.rx.offset] == '1')
+			gpio_pin_toggle(gpio0_dev,leds_pins[0]);
+		else if (evt->data.rx.buf[evt->data.rx.offset] == '2')
+			gpio_pin_toggle(gpio0_dev,leds_pins[1]);
+		else if (evt->data.rx.buf[evt->data.rx.offset] == '3')
+			gpio_pin_toggle(gpio0_dev,leds_pins[2]);
+		else if (evt->data.rx.buf[evt->data.rx.offset] == '4')
+			gpio_pin_toggle(gpio0_dev,leds_pins[3]);						
+		}
+
+	break;
+	case UART_RX_DISABLED:
+		uart_rx_enable(dev ,rx_buf,sizeof rx_buf,RECEIVE_TIMEOUT);
+		break;
+		
+	default:
+		break;
 	}
 }
