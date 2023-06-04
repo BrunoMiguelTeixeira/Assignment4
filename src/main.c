@@ -20,7 +20,7 @@
 #define TASK_LEDS_PRIORITY 5
 
 /* UART Defines*/
-#define SLEEP_TIME_MS 1000
+#define SLEEP_TIME_MS 100
 #define RECEIVE_BUFF_SIZE 10
 #define RECEIVE_TIMEOUT 100
 
@@ -57,8 +57,6 @@ static const struct device *uart = DEVICE_DT_GET(UART0_NODE);
 const uint8_t buttons_pins[] = {11, 12, 24, 25};
 const uint8_t leds_pins[] = {13, 14, 15, 16};
 
-uint8_t data = 0x00;
-
 const struct uart_config uart_cfg = {
 	.baudrate = 115200,
 	.parity = UART_CFG_PARITY_NONE,
@@ -80,8 +78,8 @@ int input_period = 10;
 struct RTDB
 {
 	int led[4];
-	int but[0];
-	int temp;
+	int but[4];
+	int8_t temp;
 } RTDB;
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data);
@@ -172,7 +170,7 @@ void main(void)
 	}
 
 	/* Thread creation */
-	/*
+	
 	task_temp_tid = k_thread_create(&task_temp_data, task_temp_stack,
 									K_THREAD_STACK_SIZEOF(task_temp_stack), TemperatureUpdate,
 									NULL, NULL, NULL, TASK_TEMP_PRIORITY, 0, K_NO_WAIT);
@@ -180,26 +178,27 @@ void main(void)
 	task_buttons_tid = k_thread_create(&task_buttons_data, task_buttons_stack,
 									   K_THREAD_STACK_SIZEOF(task_buttons_stack), ButtonsUpdate,
 									   NULL, NULL, NULL, TASK_BUTTONS_PRIORITY, 0, K_NO_WAIT);
-
+	
 	task_leds_tid = k_thread_create(&task_leds_data, task_leds_stack,
 									K_THREAD_STACK_SIZEOF(task_leds_stack), LedsUpdate,
 									NULL, NULL, NULL, TASK_LEDS_PRIORITY, 0, K_NO_WAIT);
 
-	return;*/
+	
 	while (1)
 	{
-		for(i = 0; i < RECEIVE_BUFF_SIZE;i++)
-		{
-			printk("%c ",rx_buf[i]);
-		}
+		
+		printk("%d",RTDB.temp);
+		k_msleep(2000);
 		printk("\n");
-		k_msleep(SLEEP_TIME_MS);
+		
 	}
+	return;
 }
 
 void TemperatureUpdate(void *argA, void *argB, void *argC)
 {
 	/*updating data variable every 10ms*/
+	uint8_t data = 0x00;
 	int64_t start_time;
 
 	printk("THREAD Temp Started!\n");
@@ -210,16 +209,14 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 
 		ret = i2c_read_dt(&dev_i2c, &data, sizeof(data));
 
-		//printk("Read %dºCelcius\n", data);
-
 		k_sem_take(&temp_sem, K_FOREVER);
 
-		RTDB.temp = ret;
+		RTDB.temp = data;
 
 		k_sem_give(&temp_sem);
 
 		/* Make thread sleep for the remaining of time before next check */
-		if (k_uptime_get() - start_time < output_period)
+		if (k_uptime_get() - start_time < input_period)
 		{
 			/*gets the most updated remaining time to sleep*/
 			k_msleep(input_period - (k_uptime_get() - start_time));
@@ -263,8 +260,6 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 	}
 }
 
-/* Toggle led1 */
-// gpio_pin_toggle(gpio0_dev, LED1_PIN);
 
 void LedsUpdate(void *argA, void *argB, void *argC)
 {
@@ -272,10 +267,14 @@ void LedsUpdate(void *argA, void *argB, void *argC)
 	
 	while (1)
 	{
+		start_time = k_uptime_get();
+
+		k_sem_take(&led_sem, K_FOREVER);
 		gpio_pin_set(gpio0_dev, leds_pins[0], RTDB.led[0]);
 		gpio_pin_set(gpio0_dev, leds_pins[1], RTDB.led[1]);
 		gpio_pin_set(gpio0_dev, leds_pins[2], RTDB.led[2]);
 		gpio_pin_set(gpio0_dev, leds_pins[3], RTDB.led[3]);
+		k_sem_give(&led_sem);
 
 		if (k_uptime_get() - start_time < output_period)
 		{
