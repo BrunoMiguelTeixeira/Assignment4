@@ -79,15 +79,9 @@ int input_period = 10;
 /*Real Time application database*/
 struct RTDB
 {
-	int LED0;
-	int LED1;
-	int LED2;
-	int LED3;
-	int BUT0;
-	int BUT1;
-	int BUT2;
-	int BUT3;
-	int TEMP;
+	int led[4];
+	int but[0];
+	int temp;
 } RTDB;
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data);
@@ -216,11 +210,11 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 
 		ret = i2c_read_dt(&dev_i2c, &data, sizeof(data));
 
-		printk("Read %dºCelcius\n", data);
+		//printk("Read %dºCelcius\n", data);
 
 		k_sem_take(&temp_sem, K_FOREVER);
 
-		RTDB.TEMP = ret;
+		RTDB.temp = ret;
 
 		k_sem_give(&temp_sem);
 
@@ -248,10 +242,10 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 
 		k_sem_take(&button_sem, K_FOREVER);
 
-		RTDB.BUT0 = gpio_pin_get(gpio0_dev, buttons_pins[0]);
-		RTDB.BUT1 = gpio_pin_get(gpio0_dev, buttons_pins[1]);
-		RTDB.BUT2 = gpio_pin_get(gpio0_dev, buttons_pins[2]);
-		RTDB.BUT3 = gpio_pin_get(gpio0_dev, buttons_pins[3]);
+		RTDB.but[0] = gpio_pin_get(gpio0_dev, buttons_pins[0]);
+		RTDB.but[1] = gpio_pin_get(gpio0_dev, buttons_pins[1]);
+		RTDB.but[2] = gpio_pin_get(gpio0_dev, buttons_pins[2]);
+		RTDB.but[3] = gpio_pin_get(gpio0_dev, buttons_pins[3]);
 
 		k_sem_give(&button_sem);
 
@@ -278,10 +272,10 @@ void LedsUpdate(void *argA, void *argB, void *argC)
 	
 	while (1)
 	{
-		gpio_pin_set(gpio0_dev, leds_pins[0], RTDB.LED0);
-		gpio_pin_set(gpio0_dev, leds_pins[1], RTDB.LED1);
-		gpio_pin_set(gpio0_dev, leds_pins[2], RTDB.LED2);
-		gpio_pin_set(gpio0_dev, leds_pins[3], RTDB.LED3);
+		gpio_pin_set(gpio0_dev, leds_pins[0], RTDB.led[0]);
+		gpio_pin_set(gpio0_dev, leds_pins[1], RTDB.led[1]);
+		gpio_pin_set(gpio0_dev, leds_pins[2], RTDB.led[2]);
+		gpio_pin_set(gpio0_dev, leds_pins[3], RTDB.led[3]);
 
 		if (k_uptime_get() - start_time < output_period)
 		{

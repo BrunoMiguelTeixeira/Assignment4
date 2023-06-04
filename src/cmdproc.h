@@ -37,10 +37,8 @@ enum error{ 	OVF_STR = -7,
  * \brief Function responsible for processing the command string
  * 
  * Comands\n
- *   P: Atributs values Kp, Ti and Td;\n
- *   S: Returns values of setpoint, output, error;\n
- *   R: Resets values of Kp, Ti and Td ('0');\n
- *   A: Atributs values to Kp, Ti and Td with ascii convertion;
+ *   D: Atributs values to digital outouts;\n
+ *   
  * \returns 0: OK;\n
  *  -1:Empty String;\n
  *  -2:Invalid Cmd;\n
