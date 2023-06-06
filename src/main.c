@@ -26,7 +26,6 @@
 /* UART Defines*/
 #define SLEEP_TIME_MS 100
 #define RECEIVE_BUFF_SIZE 10
-#define TX_BUFF_SIZE 20
 #define RECEIVE_TIMEOUT 100
 #define TX_TIMEOUT 100
 
@@ -79,11 +78,12 @@ static uint8_t tx_buf[] = {"nRF Connect SDK Fundamentals Course\n\r"
 						   "Press 1-3 on your keyboard to toggle LEDS 1-3 on your development kit\n\r"};
 
 /* STEP 10.1.2 - Define the receive buffer */
-static uint8_t rx_buf[RECEIVE_BUFF_SIZE] = {0};
+static uint8_t rx_buf[MAX_CMDSTRING_SIZE] = {0};
 
 int ret;
 int output_period = 10; /* ms */
-int input_period = 10;
+int input_temp_period = 1000;
+int input_button_period = 10;
 
 /*Real Time application database*/
 struct RTDB RTDB;
@@ -165,7 +165,7 @@ void main(void)
 	/*Configure Leds*/
 	for (i = 0; i < sizeof(leds_pins); i++)
 	{
-		ret = gpio_pin_configure(gpio0_dev, leds_pins[i], GPIO_OUTPUT_ACTIVE);
+		ret = gpio_pin_configure(gpio0_dev, leds_pins[i], GPIO_OUTPUT_ACTIVE | GPIO_PULL_UP);
 		if (ret < 0)
 		{
 			printk("Error: gpio_pin_configure failed for led %d/pin %d, error:%d\n\r", i + 1, leds_pins[i], ret);
@@ -219,10 +219,10 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 		k_sem_give(&temp_sem);
 
 		/* Make thread sleep for the remaining of time before next check */
-		if (k_uptime_get() - start_time < input_period)
+		if (k_uptime_get() - start_time < input_temp_period)
 		{
 			/*gets the most updated remaining time to sleep*/
-			k_msleep(input_period - (k_uptime_get() - start_time));
+			k_msleep(input_temp_period - (k_uptime_get() - start_time));
 		}
 		else
 		{
@@ -250,10 +250,10 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 		k_sem_give(&button_sem);
 
 		/* Make thread sleep for the remaining of time before next check */
-		if (k_uptime_get() - start_time < output_period)
+		if (k_uptime_get() - start_time < input_button_period)
 		{
 			/*gets the most updated remaining time to sleep*/
-			k_msleep(input_period - (k_uptime_get() - start_time));
+			k_msleep(input_button_period - (k_uptime_get() - start_time));
 		}
 		else
 		{
@@ -281,7 +281,7 @@ void LedsUpdate(void *argA, void *argB, void *argC)
 		if (k_uptime_get() - start_time < output_period)
 		{
 			/*gets the most updated remaining time to sleep*/
-			k_msleep(input_period - (k_uptime_get() - start_time));
+			k_msleep(output_period - (k_uptime_get() - start_time));
 		}
 		else
 		{
@@ -314,18 +314,6 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 			printk("\n");
 			k_sem_give(&command_sem);
 		}
-		/*
-		if(evt->data.rx.len == 1){
-			if(evt->data.rx.buf[evt->data.rx.offset] == '1')
-				RTDB.led[0]=!RTDB.led[0];
-			else if (evt->data.rx.buf[evt->data.rx.offset] == '2')
-				RTDB.led[1]=!RTDB.led[1];
-			else if (evt->data.rx.buf[evt->data.rx.offset] == '3')
-				RTDB.led[2]=!RTDB.led[2];
-			else if (evt->data.rx.buf[evt->data.rx.offset] == '4')
-				RTDB.led[3]=!RTDB.led[3];						
-			}*/
-
 	break;
 	case UART_RX_DISABLED:
 		uart_rx_enable(dev ,rx_buf,sizeof rx_buf,RECEIVE_TIMEOUT);

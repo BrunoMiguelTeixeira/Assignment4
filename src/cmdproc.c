@@ -6,6 +6,11 @@
 
 /* database*/
 extern struct RTDB RTDB;
+/* External times */
+extern int output_period; /* ms */
+extern int input_temp_period;
+extern int input_button_period;
+
 
 /* Internal variables */
 static char cmdString[MAX_CMDSTRING_SIZE];
@@ -14,6 +19,7 @@ static unsigned char cmdStringLen = 0;
 int cmdProcessor(void)
 {
 	int i, j;
+	int value=0;
 	int index, state;
 	
 	/* Detect empty cmd string */
@@ -78,7 +84,6 @@ int cmdProcessor(void)
 				resetCmdString();
 				return CS_ERR;
 			}
-			printk("led[%d]=%d\n",index,state);
 			RTDB.led[index] = state;
 
 
@@ -114,6 +119,31 @@ int cmdProcessor(void)
 			printk("BUT %d\n",RTDB.but[index]);
 			break;
 		/* In case of the no command is detected */
+		case 'F':
+			if((j - i + 1) != 8)
+			{
+				resetCmdString();
+				return CS_ERR;
+			}
+			value=1000*(cmdString[i+3]-'0');
+			value=value+100*(cmdString[i+4]-'0');
+			value=value+10*(cmdString[i+5]-'0');
+			value=value+(cmdString[i+6]-'0');
+			switch(cmdString[i+2])
+			{
+				case 'T':
+					input_temp_period = (1000 / value);
+				break;
+				case 'L':
+					output_period = 1000 / value;
+				break;
+				case 'B':
+					input_button_period = 1000 / value;
+				break;
+				default:
+				break;
+			}
+			printk("\nnew freq=%d\n",value);
 		default:
 			resetCmdString();
 			return INV_COMAND;
@@ -195,7 +225,7 @@ int newCmdCharASCII(unsigned char newChar)
 		int a = newChar % 10;
 		int b = newChar / 10;
 
-		/* if value in newChar is higher than 100*/
+		/* if value in newChar is higher than 100 */
 		if (b >= 10)
 		{
 			cmdString[cmdStringLen] = '0' + (b / 10);
