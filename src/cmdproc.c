@@ -1,11 +1,11 @@
 #include <stdio.h>
-
+#include <zephyr/sys/printk.h>
+/* sems */
+#include <zephyr/kernel.h>
 #include "cmdproc.h"
 
 /* database*/
-int led[4] = {0,0,0,0};
-int but[4] = {0,1,0,1};
-int temp = 25;
+extern struct RTDB RTDB;
 
 /* Internal variables */
 static char cmdString[MAX_CMDSTRING_SIZE];
@@ -14,14 +14,19 @@ static unsigned char cmdStringLen = 0;
 int cmdProcessor(void)
 {
 	int i, j;
+	int index, state;
 	
 	/* Detect empty cmd string */
 	if (cmdStringLen == 0)
+	{
+		resetCmdString();
 		return EMPTY_STRING;
+	}
 
 	/* Find index of SOF */
 	for (i = 0; i < cmdStringLen; i++)
 	{
+		/* if SOF found stores the position in i */
 		if (cmdString[i] == SOF_SYM)
 		{
 			break;
@@ -31,12 +36,14 @@ int cmdProcessor(void)
 	/* Send error in case SOF isn't found */
 	if (cmdString[i] != SOF_SYM)
 	{
+		resetCmdString();
 		return STR_FORMAT_ERR;
 	}
 
 	/* Find index of EOF */
 	for (j = 0; j < cmdStringLen; j++)
 	{
+		/* is EOF fiund stores the position in j */
 		if (cmdString[j] == EOF_SYM)
 		{
 			break;
@@ -46,6 +53,7 @@ int cmdProcessor(void)
 	/* Send error in case EOF isn't found */
 	if (cmdString[j] != EOF_SYM)
 	{
+		resetCmdString();
 		return STR_FORMAT_ERR;
 	}
 	
@@ -54,8 +62,8 @@ int cmdProcessor(void)
 	{
 		switch (cmdString[i + 1])
 		{
-		/* In case of the D command is detected */
-		case 'D':
+		/* In case of the D command for Leds is detected */
+		case 'L':
 			/* If there is not enough values */
 			if ( (j - i + 1) != 5)
 			{
@@ -63,19 +71,20 @@ int cmdProcessor(void)
 				return CS_ERR;
 			}
 			
-			int index = cmdString[i + 2] - '0';
-			int state = cmdString[i + 3] - '0';
-			
+			index = cmdString[i + 2] - '0';
+			state = cmdString[i + 3] - '0';
 			if ((index > 3 || index < 0) || (state > 1 || state < 0))
 			{
 				resetCmdString();
 				return CS_ERR;
 			}
-			
-			led[index] = state;
+			printk("led[%d]=%d\n",index,state);
+			RTDB.led[index] = state;
+
+
 			break;
 			
-		/* In case of the T command is detected */
+		/* In case of the T command for temperature is detected */
 		case 'T':
 			if ( (j - i + 1) != 3)
 			{
@@ -83,10 +92,10 @@ int cmdProcessor(void)
 				return CS_ERR;
 			}
 			
-			printf("%d",temp);
+			printk("Temp= %d\n",RTDB.temp);
 			break;
 			
-		/* In case of the B command is detected */
+		/* In case of the B command for Button read is detected */
 		case 'B':
 			if ( (j - i + 1) != 4)
 			{
@@ -94,7 +103,7 @@ int cmdProcessor(void)
 				return CS_ERR;
 			}
 			
-			int index = cmdString[i + 2] - '0';
+			index = cmdString[i + 2] - '0';
 			
 			if (index > 3 || index < 0)
 			{
@@ -102,10 +111,11 @@ int cmdProcessor(void)
 				return CS_ERR;
 			}
 			
-			printf("%d",but[index]);
+			printk("BUT %d\n",RTDB.but[index]);
 			break;
 		/* In case of the no command is detected */
 		default:
+			resetCmdString();
 			return INV_COMAND;
 		}
 	}

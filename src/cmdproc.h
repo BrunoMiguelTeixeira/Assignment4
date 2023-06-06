@@ -10,6 +10,14 @@
  * */
 
 
+
+struct RTDB
+{
+	int led[4];
+	int but[4];
+	int temp;
+};
+
 /** \brief Enum with error codes
  * 
  *  0: Executed function with success;		                                                          	    

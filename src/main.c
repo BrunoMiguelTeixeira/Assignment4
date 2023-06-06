@@ -5,6 +5,9 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
+#include <string.h>
+#include "cmdproc.h"
+
 
 /* Refer to dts file */
 #define I2C0_NODE DT_NODELABEL(tempsensor)
@@ -18,36 +21,44 @@
 #define TASK_TEMP_PRIORITY 5
 #define TASK_BUTTONS_PRIORITY 5
 #define TASK_LEDS_PRIORITY 5
+#define TASK_COMMAND_PRIORITY 5
 
 /* UART Defines*/
 #define SLEEP_TIME_MS 100
 #define RECEIVE_BUFF_SIZE 10
+#define TX_BUFF_SIZE 20
 #define RECEIVE_TIMEOUT 100
+#define TX_TIMEOUT 100
 
 /*Semaphores definition*/
 K_SEM_DEFINE(temp_sem, 1, 1);
 K_SEM_DEFINE(led_sem, 1, 1);
 K_SEM_DEFINE(button_sem, 1, 1);
+K_SEM_DEFINE(command_sem, 0, 1);
 
 /* Create threads stack space*/
 K_THREAD_STACK_DEFINE(task_temp_stack, STACK_SIZE);
 K_THREAD_STACK_DEFINE(task_buttons_stack, STACK_SIZE);
 K_THREAD_STACK_DEFINE(task_leds_stack, STACK_SIZE);
+K_THREAD_STACK_DEFINE(task_command_stack,STACK_SIZE);
 
 /* Variable for threads data*/
 struct k_thread task_temp_data;
 struct k_thread task_buttons_data;
 struct k_thread task_leds_data;
+struct k_thread task_command_data;
 
 /* Threads ID*/
 k_tid_t task_temp_tid;
 k_tid_t task_buttons_tid;
 k_tid_t task_leds_tid;
+k_tid_t task_command_tid;
 
 /* Threads prototypes */
 void ButtonsUpdate(void *argA, void *argB, void *argC);
 void TemperatureUpdate(void *argA, void *argB, void *argC);
 void LedsUpdate(void *argA, void *argB, void *argC);
+void Command_Process(void *argA, void *argB, void *argC);
 
 /*Device structs*/
 static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C0_NODE);
@@ -75,18 +86,15 @@ int output_period = 10; /* ms */
 int input_period = 10;
 
 /*Real Time application database*/
-struct RTDB
-{
-	int led[4];
-	int but[4];
-	int8_t temp;
-} RTDB;
+struct RTDB RTDB;
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data);
 
 /* main */
 void main(void)
 {
+	RTDB.led[0]=0;
+	RTDB.led[1]=1;
 	/* Check if uart is ready */
 	if (!device_is_ready(uart))
 	{
@@ -183,15 +191,10 @@ void main(void)
 									K_THREAD_STACK_SIZEOF(task_leds_stack), LedsUpdate,
 									NULL, NULL, NULL, TASK_LEDS_PRIORITY, 0, K_NO_WAIT);
 
+	task_command_tid = k_thread_create(&task_command_data, task_command_stack,
+									K_THREAD_STACK_SIZEOF(task_command_stack), Command_Process,
+									NULL, NULL, NULL, TASK_COMMAND_PRIORITY, 0, K_NO_WAIT);
 	
-	while (1)
-	{
-		
-		printk("%d",RTDB.temp);
-		k_msleep(2000);
-		printk("\n");
-		
-	}
 	return;
 }
 
@@ -223,8 +226,7 @@ void TemperatureUpdate(void *argA, void *argB, void *argC)
 		}
 		else
 		{
-			printk("Failed to meet requirement!");
-			return;
+			printk("Failed to meet requirement! Temp\n");
 		}
 	}
 }
@@ -233,6 +235,7 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 {
 	
 	int64_t start_time;
+	printk("Button started!\n");
 	while (1)
 	{
 		start_time = k_uptime_get();
@@ -254,8 +257,7 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 		}
 		else
 		{
-			printk("Failed to meet requirement!");
-			return;
+			printk("Failed to meet requirement! Button\n");
 		}
 	}
 }
@@ -264,7 +266,7 @@ void ButtonsUpdate(void *argA, void *argB, void *argC)
 void LedsUpdate(void *argA, void *argB, void *argC)
 {
 	int start_time = k_uptime_get();
-	
+	printk("LED started!\n");
 	while (1)
 	{
 		start_time = k_uptime_get();
@@ -283,10 +285,21 @@ void LedsUpdate(void *argA, void *argB, void *argC)
 		}
 		else
 		{
-			printk("Failed to meet requirement!");
+			printk("Failed to meet requirement! LED\n");
 			return;
 		}
 	}
+}
+
+/* Waits for uart to announce the end of the command by raising the flag*/
+void Command_Process(void *argA, void *argB, void *argC)
+{
+	while(1)
+	{
+		k_sem_take(&command_sem, K_FOREVER);
+		cmdProcessor();
+	}
+
 }
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
@@ -294,17 +307,24 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 	switch (evt->type) {
 
 	case UART_RX_RDY:
-	if((evt->data.rx.len) == 1){
-
-		if(evt->data.rx.buf[evt->data.rx.offset] == '1')
-			gpio_pin_toggle(gpio0_dev,leds_pins[0]);
-		else if (evt->data.rx.buf[evt->data.rx.offset] == '2')
-			gpio_pin_toggle(gpio0_dev,leds_pins[1]);
-		else if (evt->data.rx.buf[evt->data.rx.offset] == '3')
-			gpio_pin_toggle(gpio0_dev,leds_pins[2]);
-		else if (evt->data.rx.buf[evt->data.rx.offset] == '4')
-			gpio_pin_toggle(gpio0_dev,leds_pins[3]);						
+		newCmdChar(evt->data.rx.buf[evt->data.rx.offset]);
+		printk("%c",evt->data.rx.buf[evt->data.rx.offset]);
+		if(evt->data.rx.buf[evt->data.rx.offset]=='!')
+		{
+			printk("\n");
+			k_sem_give(&command_sem);
 		}
+		/*
+		if(evt->data.rx.len == 1){
+			if(evt->data.rx.buf[evt->data.rx.offset] == '1')
+				RTDB.led[0]=!RTDB.led[0];
+			else if (evt->data.rx.buf[evt->data.rx.offset] == '2')
+				RTDB.led[1]=!RTDB.led[1];
+			else if (evt->data.rx.buf[evt->data.rx.offset] == '3')
+				RTDB.led[2]=!RTDB.led[2];
+			else if (evt->data.rx.buf[evt->data.rx.offset] == '4')
+				RTDB.led[3]=!RTDB.led[3];						
+			}*/
 
 	break;
 	case UART_RX_DISABLED:
